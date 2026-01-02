@@ -6,7 +6,6 @@ use boringtun::device::{DeviceConfig, DeviceHandle, ProxyConfig};
 use clap::{Arg, Command};
 use daemonize::Daemonize;
 use std::fs::File;
-use std::os::unix::net::UnixDatagram;
 use std::process::exit;
 use tracing::Level;
 
@@ -106,10 +105,6 @@ fn main() {
     let n_threads: usize = matches.value_of_t("threads").unwrap_or_else(|e| e.exit());
     let log_level: Level = matches.value_of_t("verbosity").unwrap_or_else(|e| e.exit());
 
-    // Create a socketpair to communicate between forked processes
-    let (sock1, sock2) = UnixDatagram::pair().unwrap();
-    let _ = sock1.set_nonblocking(true);
-
     let _guard;
 
     if background {
@@ -129,16 +124,7 @@ fn main() {
             .init();
 
         let daemonize = Daemonize::new()
-            .working_directory("/tmp")
-            .exit_action(move || {
-                let mut b = [0u8; 1];
-                if sock2.recv(&mut b).is_ok() && b[0] == 1 {
-                    println!("BoringTun started successfully");
-                } else {
-                    eprintln!("BoringTun failed to start");
-                    exit(1);
-                };
-            });
+            .working_directory("/tmp");
 
         match daemonize.start() {
             Ok(_) => tracing::info!("BoringTun started successfully"),
@@ -176,9 +162,7 @@ fn main() {
     let mut device_handle: DeviceHandle = match DeviceHandle::new(tun_name, config) {
         Ok(d) => d,
         Err(e) => {
-            // Notify parent that tunnel initialization failed
             tracing::error!(message = "Failed to initialize tunnel", error=?e);
-            sock1.send(&[0]).unwrap();
             exit(1);
         }
     };
@@ -186,14 +170,9 @@ fn main() {
     if !matches.is_present("disable-drop-privileges") {
         if let Err(e) = drop_privileges() {
             tracing::error!(message = "Failed to drop privileges", error = ?e);
-            sock1.send(&[0]).unwrap();
             exit(1);
         }
     }
-
-    // Notify parent that tunnel initialization succeeded
-    sock1.send(&[1]).unwrap();
-    drop(sock1);
 
     tracing::info!("BoringTun started successfully");
 

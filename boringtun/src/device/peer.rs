@@ -5,7 +5,9 @@ use parking_lot::RwLock;
 use socket2::{Domain, Protocol, Type};
 use std::io::{Read, Write};
 
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpStream};
+use std::net::{
+    IpAddr, Ipv4Addr, Ipv6Addr, Shutdown, SocketAddr, SocketAddrV4, SocketAddrV6, TcpStream,
+};
 use std::str::FromStr;
 
 use crate::device::{AllowedIps, Error, ProxyConfig};
@@ -123,26 +125,29 @@ impl Peer {
             match proxy_cfg.proxy_type.as_str() {
                 "socks5" => {
                     tracing::info!("Connecting via SOCKS5 proxy: {}", proxy_cfg.address);
-                    
+
                     // Parse proxy address
-                    let proxy_addr: SocketAddr = proxy_cfg.address.parse()
+                    let proxy_addr: SocketAddr = proxy_cfg
+                        .address
+                        .parse()
                         .map_err(|e| Error::Connect(format!("Invalid proxy address: {}", e)))?;
-                    
+
                     // Create TCP connection to SOCKS5 server for UDP ASSOCIATE
-                    let mut stream = TcpStream::connect(proxy_addr)
-                        .map_err(|e| Error::Connect(format!("Failed to connect to proxy: {}", e)))?;
-                    
+                    let mut stream = TcpStream::connect(proxy_addr).map_err(|e| {
+                        Error::Connect(format!("Failed to connect to proxy: {}", e))
+                    })?;
+
                     // SOCKS5 handshake
                     // Send greeting with no authentication
                     stream.write_all(&[0x05, 0x01, 0x00])?;
-                    
+
                     // Read server response
                     let mut response = [0u8; 2];
                     stream.read_exact(&mut response)?;
                     if response[0] != 0x05 || response[1] != 0x00 {
                         return Err(Error::Connect("SOCKS5 handshake failed".to_owned()));
                     }
-                    
+
                     // Send UDP ASSOCIATE request
                     // Format: VER(1) | CMD(1) | RSV(1) | ATYP(1) | DST.ADDR(var) | DST.PORT(2)
                     // CMD = 0x03 for UDP ASSOCIATE
@@ -150,48 +155,64 @@ impl Peer {
                     let mut request = vec![0x05, 0x03, 0x00, 0x01]; // VER, CMD, RSV, ATYP(IPv4)
                     request.extend_from_slice(&[0u8; 4]); // 0.0.0.0
                     request.extend_from_slice(&port.to_be_bytes()); // Port
-                    
+
                     stream.write_all(&request)?;
-                    
+
                     // Read UDP ASSOCIATE response
                     // Format: VER(1) | REP(1) | RSV(1) | ATYP(1) | BND.ADDR(var) | BND.PORT(2)
                     let mut resp = [0u8; 4];
                     stream.read_exact(&mut resp)?;
                     if resp[0] != 0x05 || resp[1] != 0x00 {
-                        return Err(Error::Connect(format!("SOCKS5 UDP ASSOCIATE failed: REP={}", resp[1])));
+                        return Err(Error::Connect(format!(
+                            "SOCKS5 UDP ASSOCIATE failed: REP={}",
+                            resp[1]
+                        )));
                     }
-                    
+
                     // Parse relay address from response
                     let relay_addr = match resp[3] {
-                        0x01 => { // IPv4
+                        0x01 => {
+                            // IPv4
                             let mut addr_bytes = [0u8; 4];
                             stream.read_exact(&mut addr_bytes)?;
                             let mut port_bytes = [0u8; 2];
                             stream.read_exact(&mut port_bytes)?;
-                            SocketAddr::new(IpAddr::V4(Ipv4Addr::from(addr_bytes)), u16::from_be_bytes(port_bytes))
+                            SocketAddr::new(
+                                IpAddr::V4(Ipv4Addr::from(addr_bytes)),
+                                u16::from_be_bytes(port_bytes),
+                            )
                         }
-                        0x04 => { // IPv6
+                        0x04 => {
+                            // IPv6
                             let mut addr_bytes = [0u8; 16];
                             stream.read_exact(&mut addr_bytes)?;
                             let mut port_bytes = [0u8; 2];
                             stream.read_exact(&mut port_bytes)?;
-                            SocketAddr::new(IpAddr::V6(Ipv6Addr::from(addr_bytes)), u16::from_be_bytes(port_bytes))
+                            SocketAddr::new(
+                                IpAddr::V6(Ipv6Addr::from(addr_bytes)),
+                                u16::from_be_bytes(port_bytes),
+                            )
                         }
-                        _ => return Err(Error::Connect("Unsupported address type in SOCKS5 response".to_owned())),
+                        _ => {
+                            return Err(Error::Connect(
+                                "Unsupported address type in SOCKS5 response".to_owned(),
+                            ))
+                        }
                     };
-                    
+
                     tracing::info!("SOCKS5 UDP relay address: {}", relay_addr);
-                    
+
                     // Close TCP connection (we don't need it anymore for UDP)
                     drop(stream);
-                    
+
                     // Create UDP socket and connect to relay address
                     let udp_socket = socket2::Socket::new(
                         Domain::for_address(relay_addr),
                         Type::STREAM,
                         Some(Protocol::UDP),
-                    ).map_err(|e| Error::Connect(format!("Failed to create UDP socket: {}", e)))?;
-                    
+                    )
+                    .map_err(|e| Error::Connect(format!("Failed to create UDP socket: {}", e)))?;
+
                     udp_socket.set_reuse_address(true)?;
                     let bind_addr = if relay_addr.is_ipv4() {
                         SocketAddrV4::new(Ipv4Addr::UNSPECIFIED, port).into()
@@ -200,22 +221,33 @@ impl Peer {
                     };
                     udp_socket.bind(&bind_addr)?;
                     udp_socket.connect(&relay_addr.into())?;
-                    
+
                     udp_socket
                 }
                 "http" => {
                     tracing::warn!("HTTP proxy not supported for UDP, using direct connection");
-                    socket2::Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::UDP))?
+                    socket2::Socket::new(
+                        Domain::for_address(addr),
+                        Type::STREAM,
+                        Some(Protocol::UDP),
+                    )?
                 }
                 _ => {
-                    tracing::warn!("Unknown proxy type: {}, using direct connection", proxy_cfg.proxy_type);
-                    socket2::Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::UDP))?
+                    tracing::warn!(
+                        "Unknown proxy type: {}, using direct connection",
+                        proxy_cfg.proxy_type
+                    );
+                    socket2::Socket::new(
+                        Domain::for_address(addr),
+                        Type::STREAM,
+                        Some(Protocol::UDP),
+                    )?
                 }
             }
         } else {
             socket2::Socket::new(Domain::for_address(addr), Type::STREAM, Some(Protocol::UDP))?
         };
-        
+
         udp_conn.set_nonblocking(true)?;
 
         #[cfg(any(target_os = "android", target_os = "fuchsia", target_os = "linux"))]

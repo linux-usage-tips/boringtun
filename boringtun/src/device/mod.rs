@@ -690,7 +690,9 @@ impl Device {
                     let ip_addr = addr.ip();
                     p.set_endpoint(addr);
                     if d.config.use_connected_socket {
-                        if let Ok(sock) = p.connect_endpoint(d.listen_port, d.fwmark, d.config.proxy.clone()) {
+                        if let Ok(sock) =
+                            p.connect_endpoint(d.listen_port, d.fwmark, d.config.proxy.clone())
+                        {
                             d.register_conn_handler(Arc::clone(peer), sock, ip_addr)
                                 .unwrap();
                         }
