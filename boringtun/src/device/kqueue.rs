@@ -187,8 +187,16 @@ impl<H: Send + Sync> EventPoll<H> {
             udata: null_mut(),
         };
 
-        if unsafe { kevent(self.kqueue, null(), 0, &mut event, 1, null()) } == -1 {
-            return WaitResult::Error(io::Error::last_os_error().to_string());
+        loop {
+            if unsafe { kevent(self.kqueue, null(), 0, &mut event, 1, null()) } == -1 {
+                let err = io::Error::last_os_error();
+                if err.raw_os_error() == Some(4) {
+                    // EINTR - interrupted system call, retry
+                    continue;
+                }
+                return WaitResult::Error(err.to_string());
+            }
+            break;
         }
 
         let event_data = unsafe { (event.udata as *mut Event<H>).as_ref().unwrap() };

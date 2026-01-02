@@ -223,10 +223,19 @@ impl<H: Sync + Send> EventPoll<H> {
     /// handler.
     pub fn wait(&self) -> WaitResult<'_, H> {
         let mut event = epoll_event { events: 0, u64: 0 };
-        match unsafe { epoll_wait(self.epoll, &mut event, 1, -1) } {
-            -1 => return WaitResult::Error(io::Error::last_os_error().to_string()),
-            1 => {}
-            _ => return WaitResult::Error("unexpected number of events returned".to_string()),
+        loop {
+            match unsafe { epoll_wait(self.epoll, &mut event, 1, -1) } {
+                -1 => {
+                    let err = io::Error::last_os_error();
+                    if err.raw_os_error() == Some(4) {
+                        // EINTR - interrupted system call, retry
+                        continue;
+                    }
+                    return WaitResult::Error(err.to_string());
+                }
+                1 => break,
+                _ => return WaitResult::Error("unexpected number of events returned".to_string()),
+            }
         }
 
         let event_data = unsafe { (event.u64 as *mut Event<H>).as_mut().unwrap() };
