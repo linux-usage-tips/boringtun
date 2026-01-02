@@ -106,7 +106,14 @@ pub struct DeviceHandle {
     threads: Vec<JoinHandle<()>>,
 }
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Debug)]
+pub struct ProxyConfig {
+    /// Proxy address, e.g. "127.0.0.1:1080"
+    pub address: String,
+    /// Proxy type, currently only "socks5" is supported
+    pub proxy_type: String,
+}
+
 pub struct DeviceConfig {
     pub n_threads: usize,
     pub use_connected_socket: bool,
@@ -114,6 +121,8 @@ pub struct DeviceConfig {
     pub use_multi_queue: bool,
     #[cfg(target_os = "linux")]
     pub uapi_fd: i32,
+    /// Optional upstream proxy configuration
+    pub proxy: Option<ProxyConfig>,
 }
 
 impl Default for DeviceConfig {
@@ -125,6 +134,7 @@ impl Default for DeviceConfig {
             use_multi_queue: true,
             #[cfg(target_os = "linux")]
             uapi_fd: -1,
+            proxy: None,
         }
     }
 }
@@ -680,7 +690,7 @@ impl Device {
                     let ip_addr = addr.ip();
                     p.set_endpoint(addr);
                     if d.config.use_connected_socket {
-                        if let Ok(sock) = p.connect_endpoint(d.listen_port, d.fwmark) {
+                        if let Ok(sock) = p.connect_endpoint(d.listen_port, d.fwmark, d.config.proxy.clone()) {
                             d.register_conn_handler(Arc::clone(peer), sock, ip_addr)
                                 .unwrap();
                         }

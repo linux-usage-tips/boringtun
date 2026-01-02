@@ -1,108 +1,128 @@
-![boringtun logo banner](./banner.png)
-
 # BoringTun
 
-## Warning
-Boringtun is currently undergoing a restructuring. You should probably not rely on or link to 
-the master branch right now. Instead you should use the crates.io page.
+[![crates.io](https://img.shields.io/crates/v/boringtun.svg)](https://crates.io/crates/boringtun)
+[![crates.io](https://img.shields.io/crates/v/boringtun-cli.svg)](https://crates.io/crates/boringtun-cli)
 
-- boringtun: [![crates.io](https://img.shields.io/crates/v/boringtun.svg)](https://crates.io/crates/boringtun)
-- boringtun-cli [![crates.io](https://img.shields.io/crates/v/boringtun-cli.svg)](https://crates.io/crates/boringtun-cli)
+**BoringTun** 是一个高性能、可移植的 [WireGuard<sup>®</sup>](https://www.wireguard.com/) 协议实现。
 
-**BoringTun** is an implementation of the [WireGuard<sup>®</sup>](https://www.wireguard.com/) protocol designed for portability and speed.
+## 简介
 
-**BoringTun** is successfully deployed on millions of [iOS](https://apps.apple.com/us/app/1-1-1-1-faster-internet/id1423538627) and [Android](https://play.google.com/store/apps/details?id=com.cloudflare.onedotonedotonedotone&hl=en_US) consumer devices as well as thousands of Cloudflare Linux servers. 
+BoringTun 已成功部署在数百万 iOS 和 Android 设备以及数千台 Cloudflare Linux 服务器上。
 
-The project consists of two parts:
+项目包含两个部分：
 
-* The executable `boringtun-cli`, a [userspace WireGuard](https://www.wireguard.com/xplatform/) 
-  implementation for Linux and macOS.
-* The library `boringtun` that can be used to implement fast and efficient WireGuard client apps on various platforms, including iOS and Android. It implements the underlying WireGuard protocol, without the network or tunnel stacks, those can be implemented in a platform idiomatic way.
+- **boringtun-cli**：Linux 和 macOS 的用户态 WireGuard 实现
+- **boringtun**：可在各种平台（包括 iOS 和 Android）上实现快速高效的 WireGuard 客户端应用的库
 
-### Installation
+## 安装
 
-You can install this project using `cargo`:
-
-```
+```bash
 cargo install boringtun-cli
 ```
 
-### Building
+## 编译
 
-- Library only: `cargo build --lib --no-default-features --release [--target $(TARGET_TRIPLE)]`
-- Executable: `cargo build --bin boringtun-cli --release [--target $(TARGET_TRIPLE)]`
+```bash
+# 仅编译库
+cargo build --lib --no-default-features --release
 
-By default the executable is placed in the `./target/release` folder. You can copy it to a desired location manually, or install it using `cargo install --bin boringtun --path .`.
+# 编译可执行文件
+cargo build --bin boringtun-cli --release
+```
 
-### Running
+编译后的可执行文件位于 `./target/release` 目录。
 
-As per the specification, to start a tunnel use:
+## 使用
 
-`boringtun-cli [-f/--foreground] INTERFACE-NAME`
+### 启动隧道
 
-The tunnel can then be configured using [wg](https://git.zx2c4.com/WireGuard/about/src/tools/man/wg.8), as a regular WireGuard tunnel, or any other tool.
+**方式一：使用 wg 工具配置**
 
-It is also possible to use with [wg-quick](https://git.zx2c4.com/WireGuard/about/src/tools/man/wg-quick.8) by setting the environment variable `WG_QUICK_USERSPACE_IMPLEMENTATION` to `boringtun`. For example:
+```bash
+# 1. 启动空隧道（wg0 是接口名称，不是配置文件）
+sudo boringtun-cli -f wg0
 
-`sudo WG_QUICK_USERSPACE_IMPLEMENTATION=boringtun-cli WG_SUDO=1 wg-quick up CONFIGURATION`
+# 2. 使用 wg 工具配置隧道
+sudo wg setconf wg0 /path/to/wg0.conf
+```
 
-### Testing
+**方式二：使用 wg-quick（推荐）**
 
-Testing this project has a few requirements:
+```bash
+# wg0.conf 是标准 WireGuard 配置文件
+sudo WG_QUICK_USERSPACE_IMPLEMENTATION=boringtun-cli wg-quick up wg0
+```
 
-- `sudo`: required to create tunnels. When you run `cargo test` you'll be prompted for your password.
-- Docker: you can install it [here](https://www.docker.com/get-started). If you are on Ubuntu/Debian you can run `apt-get install docker.io`.
+### WireGuard 配置文件格式
 
-## Supported platforms
+`wg0.conf` 是标准 WireGuard 配置文件：
 
-Target triple                 |Binary|Library|
-------------------------------|:----:|------|
-x86_64-unknown-linux-gnu      |  ✓   | ✓    |
-aarch64-unknown-linux-gnu     |  ✓   | ✓    |
-armv7-unknown-linux-gnueabihf |  ✓   | ✓    |
-x86_64-apple-darwin           |  ✓   | ✓    |
-x86_64-pc-windows-msvc        |      | ✓    |
-aarch64-apple-ios             |      | ✓    |
-armv7-apple-ios               |      | ✓    |
-armv7s-apple-ios              |      | ✓    |
-aarch64-linux-android         |      | ✓    |
-arm-linux-androideabi         |      | ✓    |
+```ini
+[Interface]
+PrivateKey = <私钥>
+Address = 10.0.0.2/24
+DNS = 8.8.8.8
 
-<sub>Other platforms may be added in the future</sub>
+[Peer]
+PublicKey = <对端公钥>
+Endpoint = <对端地址>:端口
+AllowedIPs = 0.0.0.0/0
+PersistentKeepalive = 25
+```
 
-#### Linux
+### 命令行参数
 
-`x86-64`, `aarch64` and `armv7` architectures are supported. The behaviour should be identical to that of [wireguard-go](https://git.zx2c4.com/wireguard-go/about/), with the following difference:
+| 参数 | 说明 |
+|------|------|
+| `INTERFACE_NAME` | 接口名称（必需） |
+| `-f, --foreground` | 前台运行 |
+| `-t, --threads` | 线程数（默认 4） |
+| `-v, --verbosity` | 日志级别：error/info/debug/trace |
+| `--disable-connected-udp` | 禁用已连接的 UDP socket |
+| `--proxy` | 上游代理地址，如 `127.0.0.1:1080` |
+| `--proxy-type` | 代理类型：socks5/http（默认 socks5） |
 
-`boringtun` will drop privileges when started. When privileges are dropped it is not possible to set `fwmark`. If `fwmark` is required, such as when using `wg-quick`, run with `--disable-drop-privileges` or set the environment variable `WG_SUDO=1`.
+### 代理支持
 
-You will need to give the executable the `CAP_NET_ADMIN` capability using: `sudo setcap cap_net_admin+epi boringtun`. sudo is not needed.
+BoringTun 支持 SOCKS5 代理转发 WireGuard 流量：
 
-#### macOS
+```bash
+# 使用 SOCKS5 代理
+boringtun wg0 --proxy 127.0.0.1:1080 --proxy-type socks5
+```
 
-The behaviour is similar to that of [wireguard-go](https://git.zx2c4.com/wireguard-go/about/). Specifically the interface name must be `utun[0-9]+` for an explicit interface name or `utun` to have the kernel select the lowest available. If you choose `utun` as the interface name, and the environment variable `WG_TUN_NAME_FILE` is defined, then the actual name of the interface chosen by the kernel is written to the file specified by that variable.
+**注意**：
+- 仅支持 SOCKS5 UDP ASSOCIATE 协议
+- HTTP 代理不支持 UDP 流量，会自动回退到直接连接
+
+## 平台支持
+
+| 平台 | 可执行文件 | 库 |
+|------|:---------:|:--:|
+| Linux (x86_64, aarch64, armv7) | ✓ | ✓ |
+| macOS (x86_64) | ✓ | ✓ |
+| Windows (x86_64) | | ✓ |
+| iOS (arm64, armv7) | | ✓ |
+| Android (arm64, arm) | | ✓ |
+
+### Linux
+
+需要 `CAP_NET_ADMIN` 权限：
+
+```bash
+sudo setcap cap_net_admin+epi boringtun
+```
+
+如需使用 `fwmark`，请运行 `--disable-drop-privileges` 或设置 `WG_SUDO=1`。
+
+### macOS
+
+接口名称必须为 `utun[0-9]+` 或 `utun`（让内核自动选择）。
+
+## 许可证
+
+本项目基于 [3-Clause BSD License](https://opensource.org/licenses/BSD-3-Clause) 开源。
 
 ---
 
-#### FFI bindings
-
-The library exposes a set of C ABI bindings, those are defined in the `wireguard_ffi.h` header file. The C bindings can be used with C/C++, Swift (using a bridging header) or C# (using [DLLImport](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.interopservices.dllimportattribute?view=netcore-2.2) with [CallingConvention](https://docs.microsoft.com/en-us/dotnet/api/system.runtime.interopservices.dllimportattribute.callingconvention?view=netcore-2.2) set to `Cdecl`).
-
-#### JNI bindings
-
-The library exposes a set of Java Native Interface bindings, those are defined in `src/jni.rs`.
-
-## License
-
-The project is licensed under the [3-Clause BSD License](https://opensource.org/licenses/BSD-3-Clause).
-
-### Contribution
-
-Unless you explicitly state otherwise, any contribution intentionally submitted for inclusion in the work by you, as defined in the 3-Clause BSD License, shall be licensed as above, without any additional terms or conditions.
-
-If you want to contribute to this project, please read our [`CONTRIBUTING.md`].
-
-[`CONTRIBUTING.md`]: https://github.com/cloudflare/.github/blob/master/CONTRIBUTING.md
-
----
-<sub><sub><sub><sub>WireGuard is a registered trademark of Jason A. Donenfeld. BoringTun is not sponsored or endorsed by Jason A. Donenfeld.</sub></sub></sub></sub>
+<sub><sub><sub><sub>WireGuard 是 Jason A. Donenfeld 的注册商标。BoringTun 未获得 Jason A. Donenfeld 的赞助或认可。</sub></sub></sub></sub>

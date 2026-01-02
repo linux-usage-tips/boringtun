@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: BSD-3-Clause
 
 use boringtun::device::drop_privileges::drop_privileges;
-use boringtun::device::{DeviceConfig, DeviceHandle};
+use boringtun::device::{DeviceConfig, DeviceHandle, ProxyConfig};
 use clap::{Arg, Command};
 use daemonize::Daemonize;
 use std::fs::File;
@@ -78,6 +78,16 @@ fn main() {
             Arg::new("disable-connected-udp")
                 .long("disable-connected-udp")
                 .help("Disable connected UDP sockets to each peer"),
+            Arg::new("proxy")
+                .long("proxy")
+                .takes_value(true)
+                .help("Upstream proxy address, e.g. 127.0.0.1:1080"),
+            Arg::new("proxy-type")
+                .long("proxy-type")
+                .takes_value(true)
+                .possible_values(["socks5", "http"])
+                .default_value("socks5")
+                .help("Proxy protocol type"),
             #[cfg(target_os = "linux")]
             Arg::new("disable-multi-queue")
                 .long("disable-multi-queue")
@@ -144,6 +154,15 @@ fn main() {
             .init();
     }
 
+    let proxy_cfg = if let Some(proxy_addr) = matches.value_of("proxy") {
+        Some(ProxyConfig {
+            address: proxy_addr.to_string(),
+            proxy_type: matches.value_of("proxy-type").unwrap().to_string(),
+        })
+    } else {
+        None
+    };
+
     let config = DeviceConfig {
         n_threads,
         #[cfg(target_os = "linux")]
@@ -151,6 +170,7 @@ fn main() {
         use_connected_socket: !matches.is_present("disable-connected-udp"),
         #[cfg(target_os = "linux")]
         use_multi_queue: !matches.is_present("disable-multi-queue"),
+        proxy: proxy_cfg,
     };
 
     let mut device_handle: DeviceHandle = match DeviceHandle::new(tun_name, config) {
